@@ -73,12 +73,12 @@ cd big-data-sandbox
 
 ### 2. Launch the sandbox
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### 3. Verify all services are running
 ```bash
-docker-compose ps
+docker compose ps
 # All services should show as "Up"
 ```
 
@@ -157,17 +157,17 @@ big-data-sandbox/
 **Services not starting?**
 - Check Docker memory allocation: `docker system info | grep Memory`
 - Increase Docker memory to at least 6GB in Docker Desktop settings
-- View logs: `docker-compose logs [service-name]`
+- View logs: `docker compose logs [service-name]`
 
 **Port conflicts?**
 - Check for running services: `lsof -i :8080` (replace with conflicting port)
 - Modify ports in `.env` file (copy from `.env.example`)
 
 **Kafka connection issues?**
-- Ensure Kafka is fully started: `docker-compose logs kafka | grep "started (kafka.server.KafkaServer)"`
+- Ensure Kafka is fully started: `docker compose logs kafka | grep "started (kafka.server.KafkaServer)"`
 - Wait 30 seconds after startup for all services to initialize
 
-**Need help?** Open an issue with your `docker-compose logs` output.
+**Need help?** Open an issue with your `docker compose logs` output.
 
 ---
 
