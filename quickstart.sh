@@ -38,8 +38,8 @@ check_prerequisites() {
     fi
 
     # Check Docker Compose
-    if ! command -v docker-compose &> /dev/null; then
-        print_message "❌ Docker Compose is not installed. Please install Docker Compose first." "$RED"
+    if ! docker compose version &> /dev/null; then
+        print_message "❌ Docker Compose is not available. Please install Docker with Compose plugin." "$RED"
         exit 1
     fi
 
@@ -111,7 +111,7 @@ setup_environment() {
 # Function to pull Docker images
 pull_images() {
     print_message "🐳 Pulling Docker images (this may take a few minutes)..." "$YELLOW"
-    docker-compose pull
+    docker compose pull
     print_message "✅ Docker images ready" "$GREEN"
 }
 
@@ -119,7 +119,7 @@ pull_images() {
 start_services() {
     print_message "🚀 Starting all services..." "$YELLOW"
 
-    docker-compose up -d
+    docker compose up -d
 
     print_message "⏳ Waiting for services to initialize (30 seconds)..." "$YELLOW"
     sleep 30
@@ -132,12 +132,12 @@ verify_services() {
     print_message "🔍 Verifying service health..." "$YELLOW"
 
     # Check if containers are running
-    RUNNING=$(docker-compose ps --services --filter "status=running" | wc -l)
+    RUNNING=$(docker compose ps --services --filter "status=running" | wc -l)
     EXPECTED=10  # Adjust based on your docker-compose.yml
 
     if [ "$RUNNING" -lt "$EXPECTED" ]; then
         print_message "⚠️  Some services may not be running properly" "$YELLOW"
-        docker-compose ps
+        docker compose ps
     else
         print_message "✅ All services are healthy!" "$GREEN"
     fi
@@ -156,9 +156,9 @@ display_info() {
     echo "  • Kafka UI:     http://localhost:9001"
     echo
     print_message "📚 Quick Start Commands:" "$BLUE"
-    echo "  • View logs:        docker-compose logs -f [service]"
-    echo "  • Stop all:         docker-compose down"
-    echo "  • Restart service:  docker-compose restart [service]"
+    echo "  • View logs:        docker compose logs -f [service]"
+    echo "  • Stop all:         docker compose down"
+    echo "  • Restart service:  docker compose restart [service]"
     echo "  • Open Jupyter:     open http://localhost:8888"
     echo
     print_message "📖 Next Steps:" "$BLUE"
@@ -207,7 +207,7 @@ main() {
 }
 
 # Handle errors
-trap 'print_message "❌ An error occurred. Check the logs with: docker-compose logs" "$RED"' ERR
+trap 'print_message "❌ An error occurred. Check the logs with: docker compose logs" "$RED"' ERR
 
 # Handle Ctrl+C
 trap 'print_message "\n⚠️  Setup interrupted. Run ./quickstart.sh to continue." "$YELLOW"; exit 1' INT

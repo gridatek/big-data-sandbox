@@ -44,7 +44,7 @@ jobs:
           ls -la
           echo ""
           echo "=== Checking for required files ==="
-          for file in docker-compose.yml README.md quickstart.sh; do
+          for file in docker compose.yml README.md quickstart.sh; do
             if [ -f "$file" ]; then
               echo "✅ $file exists"
             else
@@ -121,15 +121,15 @@ jobs:
           docker --version
           echo ""
           echo "=== Docker Compose Version ==="
-          docker-compose --version
+          docker compose version
           echo ""
           echo "=== Docker System Info ==="
           docker system info
 
       - name: 🎨 Validate Docker Compose file
         run: |
-          echo "=== Validating docker-compose.yml ==="
-          docker-compose config --quiet && echo "✅ Docker Compose file is valid" || exit 1
+          echo "=== Validating docker compose.yml ==="
+          docker compose config --quiet && echo "✅ Docker Compose file is valid" || exit 1
 
   test-services:
     name: Test All Services
@@ -167,21 +167,21 @@ jobs:
           # Start only the specific service and its dependencies
           case "${{ matrix.service }}" in
             kafka)
-              docker-compose up -d zookeeper kafka kafka-ui
+              docker compose up -d zookeeper kafka kafka-ui
               ;;
             spark)
-              docker-compose up -d spark-master spark-worker
+              docker compose up -d spark-master spark-worker
               ;;
             airflow)
-              docker-compose up -d postgres airflow-init
+              docker compose up -d postgres airflow-init
               sleep 30  # Wait for init
-              docker-compose up -d airflow-webserver airflow-scheduler
+              docker compose up -d airflow-webserver airflow-scheduler
               ;;
             minio)
-              docker-compose up -d minio minio-client
+              docker compose up -d minio minio-client
               ;;
             jupyter)
-              docker-compose up -d jupyter
+              docker compose up -d jupyter
               ;;
           esac
           
@@ -191,12 +191,12 @@ jobs:
       - name: 🔍 Check ${{ matrix.service }} health
         run: |
           echo "=== Checking ${{ matrix.service }} status ==="
-          docker-compose ps
+          docker compose ps
           
           # Service-specific health checks
           case "${{ matrix.service }}" in
             kafka)
-              timeout 60 bash -c 'until docker-compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list; do sleep 5; done'
+              timeout 60 bash -c 'until docker compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list; do sleep 5; done'
               echo "✅ Kafka is responding"
               ;;
             spark)
@@ -223,26 +223,26 @@ jobs:
           echo "=== ${{ matrix.service }} logs ==="
           case "${{ matrix.service }}" in
             kafka)
-              docker-compose logs --tail=50 kafka zookeeper
+              docker compose logs --tail=50 kafka zookeeper
               ;;
             spark)
-              docker-compose logs --tail=50 spark-master spark-worker
+              docker compose logs --tail=50 spark-master spark-worker
               ;;
             airflow)
-              docker-compose logs --tail=50 airflow-webserver airflow-scheduler
+              docker compose logs --tail=50 airflow-webserver airflow-scheduler
               ;;
             minio)
-              docker-compose logs --tail=50 minio
+              docker compose logs --tail=50 minio
               ;;
             jupyter)
-              docker-compose logs --tail=50 jupyter
+              docker compose logs --tail=50 jupyter
               ;;
           esac
 
       - name: 🧹 Cleanup
         if: always()
         run: |
-          docker-compose down -v
+          docker compose down -v
           docker system prune -f
 
   integration-test:
@@ -280,20 +280,20 @@ jobs:
       - name: 🚀 Start all services
         run: |
           echo "=== Starting all services ==="
-          docker-compose up -d
+          docker compose up -d
           
           echo "=== Waiting for services to initialize (60 seconds) ==="
           sleep 60
           
           echo "=== Service status ==="
-          docker-compose ps
+          docker compose ps
 
       - name: ✅ Verify all services are running
         run: |
           echo "=== Checking service health ==="
           
           # Check Kafka
-          docker-compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list
+          docker compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list
           echo "✅ Kafka is running"
           
           # Check Spark
@@ -448,17 +448,17 @@ jobs:
           echo "=== Testing data pipeline ==="
           
           # Create test data in MinIO
-          docker-compose exec -T minio mc mb local/test-bucket || true
-          echo "test,data,123" | docker-compose exec -T minio mc pipe local/test-bucket/test.csv
+          docker compose exec -T minio mc mb local/test-bucket || true
+          echo "test,data,123" | docker compose exec -T minio mc pipe local/test-bucket/test.csv
           
           # Create and send Kafka message
           echo '{"event": "test", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S)'"}'| \
-            docker-compose exec -T kafka kafka-console-producer \
+            docker compose exec -T kafka kafka-console-producer \
             --broker-list localhost:9092 \
             --topic test-events
           
           # Verify message was sent
-          docker-compose exec -T kafka kafka-console-consumer \
+          docker compose exec -T kafka kafka-console-consumer \
             --bootstrap-server localhost:9092 \
             --topic test-events \
             --from-beginning \
@@ -476,7 +476,7 @@ jobs:
           echo "Commit: ${{ github.sha }}"
           echo ""
           echo "Services Status:"
-          docker-compose ps
+          docker compose ps
           echo ""
           echo "Resource Usage:"
           docker stats --no-stream
@@ -487,8 +487,8 @@ jobs:
           echo "=== Collecting logs for debugging ==="
           mkdir -p logs-archive
           
-          for service in $(docker-compose ps --services); do
-            docker-compose logs --no-color "$service" > "logs-archive/${service}.log" 2>&1
+          for service in $(docker compose ps --services); do
+            docker compose logs --no-color "$service" > "logs-archive/${service}.log" 2>&1
           done
           
           echo "Logs collected in logs-archive/"
@@ -506,7 +506,7 @@ jobs:
         if: always()
         run: |
           echo "=== Cleaning up ==="
-          docker-compose down -v
+          docker compose down -v
           docker system prune -f
           echo "✅ Cleanup completed"
 
@@ -535,7 +535,7 @@ jobs:
 
       - name: 🚀 Start services
         run: |
-          docker-compose up -d
+          docker compose up -d
           sleep 60
 
       - name: 🏃 Run performance tests
@@ -544,7 +544,7 @@ jobs:
           
           # Test Kafka throughput
           echo "Testing Kafka throughput..."
-          docker-compose exec -T kafka kafka-producer-perf-test \
+          docker compose exec -T kafka kafka-producer-perf-test \
             --topic perf-test \
             --num-records 1000 \
             --record-size 1024 \
@@ -572,7 +572,7 @@ jobs:
       - name: 🧹 Cleanup
         if: always()
         run: |
-          docker-compose down -v
+          docker compose down -v
           docker system prune -f
 
   security-scan:
