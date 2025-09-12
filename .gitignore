@@ -1,0 +1,410 @@
+# Big Data Sandbox - Git Ignore File
+
+# ============================================
+# Environment and Configuration
+# ============================================
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# Local configuration
+config.local.yml
+config.local.yaml
+*.local.conf
+local-settings.py
+
+# ============================================
+# Data and Storage
+# ============================================
+
+# Data files (keep sample data)
+data/*.csv
+data/*.json
+data/*.parquet
+data/*.avro
+data/*.xlsx
+data/*.db
+!data/sales_data.csv
+!data/sample_events.json
+!data/.gitkeep
+
+# MinIO storage
+minio/data/*
+!minio/data/.gitkeep
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+postgres-data/
+mysql-data/
+
+# ============================================
+# Logs and Temporary Files
+# ============================================
+
+# Log files
+logs/
+*.log
+*.log.*
+airflow/logs/
+spark/logs/
+kafka/logs/
+jupyter/logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.~*
+
+# Spark temporary files
+spark-warehouse/
+metastore_db/
+derby.log
+spark/work/
+
+# ============================================
+# Python
+# ============================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+.virtualenv
+virtualenv/
+pipenv/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints
+jupyter/notebooks/.ipynb_checkpoints/
+jupyter/notebooks/*-checkpoint.ipynb
+
+# pyenv
+.python-version
+
+# ============================================
+# Java / Scala / Spark
+# ============================================
+
+# Compiled class files
+*.class
+
+# Package files
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# SBT
+.bsp/
+.bloop/
+.metals/
+project/target/
+project/project/
+
+# ============================================
+# Node.js (for Kafka UI, Airflow plugins, etc.)
+# ============================================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+.npm
+
+# ============================================
+# Docker
+# ============================================
+
+# Docker volumes (local mounts)
+volumes/
+docker-volumes/
+
+# Docker override files
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Container specific
+.dockerignore.local
+
+# ============================================
+# Airflow
+# ============================================
+
+# Airflow configuration
+airflow/airflow.cfg
+airflow/unittests.cfg
+airflow/airflow.db
+airflow/airflow-webserver.pid
+airflow/standalone_admin_password.txt
+airflow/logs/
+airflow/plugins/__pycache__/
+
+# Airflow DAG artifacts
+airflow/dags/__pycache__/
+airflow/dags/*.pyc
+
+# ============================================
+# Kafka
+# ============================================
+
+# Kafka data
+kafka/data/
+kafka-logs/
+zookeeper-data/
+zookeeper-logs/
+
+# ============================================
+# IDE and Editors
+# ============================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+.history/
+
+# IntelliJ IDEA
+/.idea
+*.iml
+*.iws
+*.ipr
+out/
+
+# Eclipse
+.eclipse/
+.project
+.classpath
+.settings/
+
+# PyCharm
+.pycharm/
+*.pyc
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.vim
+.vim/
+Session.vim
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# Operating System
+# ============================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+.nfs*
+
+# ============================================
+# Security and Credentials
+# ============================================
+
+# Private keys
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_dsa
+id_dsa.pub
+id_ecdsa
+id_ecdsa.pub
+id_ed25519
+id_ed25519.pub
+
+# Credentials
+credentials/
+secrets/
+*.secret
+*.credentials
+.netrc
+
+# AWS
+.aws/
+aws-credentials
+
+# GCP
+gcp-key.json
+service-account.json
+
+# Azure
+azure-credentials.json
+
+# ============================================
+# Backup Files
+# ============================================
+
+*.bak
+*.backup
+*.old
+*.orig
+*.original
+*.save
+backup/
+backups/
+
+# ============================================
+# Testing
+# ============================================
+
+# Test output
+test-output/
+test-results/
+test-reports/
+*.test
+*.spec
+
+# Load testing
+gatling/
+jmeter/
+
+# ============================================
+# Documentation Build
+# ============================================
+
+# Sphinx documentation
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# MkDocs
+site/
+
+# ============================================
+# Project Specific
+# ============================================
+
+# Processed data (keep structure)
+processed/*
+!processed/.gitkeep
+
+# Models
+models/*.pkl
+models/*.h5
+models/*.model
+!models/.gitkeep
+
+# Checkpoints
+checkpoints/
+*.ckpt
+
+# MLflow
+mlruns/
+mlflow.db
+
+# DVC
+.dvc/
+.dvcignore
+

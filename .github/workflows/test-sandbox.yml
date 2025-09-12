@@ -1,0 +1,599 @@
+name: Test Big Data Sandbox
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  schedule:
+    # Run tests daily at 2 AM UTC to catch any breaking changes
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Enable debug logging'
+        required: false
+        default: 'false'
+
+env:
+  COMPOSE_PROJECT_NAME: bigdata-sandbox-ci
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  test-setup:
+    name: Test Environment Setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 🔍 Check file structure
+        run: |
+          echo "=== Checking project structure ==="
+          ls -la
+          echo ""
+          echo "=== Checking for required files ==="
+          for file in docker-compose.yml README.md quickstart.sh; do
+            if [ -f "$file" ]; then
+              echo "✅ $file exists"
+            else
+              echo "❌ $file missing"
+              exit 1
+            fi
+          done
+
+      - name: 📁 Create required directories
+        run: |
+          mkdir -p airflow/dags airflow/plugins
+          mkdir -p spark/jobs spark/config
+          mkdir -p kafka/config kafka/producers
+          mkdir -p jupyter/notebooks
+          mkdir -p data logs
+          mkdir -p minio/data
+          echo "✅ Directories created"
+
+      - name: 📝 Create sample files if missing
+        run: |
+          # Create sample DAG if not exists
+          if [ ! -f "airflow/dags/sample_etl.py" ]; then
+            echo "Creating sample DAG..."
+            cat > airflow/dags/sample_etl.py << 'EOF'
+          from airflow import DAG
+          from airflow.operators.bash_operator import BashOperator
+          from datetime import datetime, timedelta
+          
+          default_args = {
+              'owner': 'test',
+              'start_date': datetime(2024, 1, 1),
+              'retries': 1,
+          }
+          
+          dag = DAG('test_dag', default_args=default_args, schedule_interval='@daily')
+          
+          test_task = BashOperator(
+              task_id='test_task',
+              bash_command='echo "Test DAG is working!"',
+              dag=dag,
+          )
+          EOF
+          fi
+          
+          # Create sample data if not exists
+          if [ ! -f "data/sales_data.csv" ]; then
+            echo "Creating sample data..."
+            cat > data/sales_data.csv << 'EOF'
+          transaction_id,date,customer_id,product_id,quantity,price,category,region
+          TRX000001,2024-10-15,CUST0042,PROD001,2,899.99,Electronics,North
+          TRX000002,2024-10-15,CUST0156,PROD003,1,599.99,Electronics,South
+          EOF
+          fi
+
+      - name: 🔧 Setup environment file
+        run: |
+          if [ -f ".env.example" ]; then
+            cp .env.example .env
+            echo "✅ Created .env from template"
+          else
+            echo "Creating default .env file..."
+            cat > .env << 'EOF'
+          AIRFLOW_WEBSERVER_PORT=8080
+          SPARK_MASTER_PORT=7077
+          KAFKA_PORT=9092
+          MINIO_PORT=9000
+          JUPYTER_PORT=8888
+          EOF
+          fi
+
+      - name: 📊 Display Docker info
+        run: |
+          echo "=== Docker Version ==="
+          docker --version
+          echo ""
+          echo "=== Docker Compose Version ==="
+          docker-compose --version
+          echo ""
+          echo "=== Docker System Info ==="
+          docker system info
+
+      - name: 🎨 Validate Docker Compose file
+        run: |
+          echo "=== Validating docker-compose.yml ==="
+          docker-compose config --quiet && echo "✅ Docker Compose file is valid" || exit 1
+
+  test-services:
+    name: Test All Services
+    runs-on: ubuntu-latest
+    needs: test-setup
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [kafka, spark, airflow, minio, jupyter]
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 📁 Setup directories
+        run: |
+          mkdir -p airflow/dags airflow/plugins
+          mkdir -p spark/jobs spark/config
+          mkdir -p kafka/config kafka/producers
+          mkdir -p jupyter/notebooks
+          mkdir -p data logs minio/data
+
+      - name: 🔧 Setup environment
+        run: |
+          if [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+
+      - name: 🐳 Start ${{ matrix.service }} service
+        run: |
+          echo "=== Starting ${{ matrix.service }} and dependencies ==="
+          
+          # Start only the specific service and its dependencies
+          case "${{ matrix.service }}" in
+            kafka)
+              docker-compose up -d zookeeper kafka kafka-ui
+              ;;
+            spark)
+              docker-compose up -d spark-master spark-worker
+              ;;
+            airflow)
+              docker-compose up -d postgres airflow-init
+              sleep 30  # Wait for init
+              docker-compose up -d airflow-webserver airflow-scheduler
+              ;;
+            minio)
+              docker-compose up -d minio minio-client
+              ;;
+            jupyter)
+              docker-compose up -d jupyter
+              ;;
+          esac
+          
+          echo "=== Waiting for service to be ready ==="
+          sleep 20
+
+      - name: 🔍 Check ${{ matrix.service }} health
+        run: |
+          echo "=== Checking ${{ matrix.service }} status ==="
+          docker-compose ps
+          
+          # Service-specific health checks
+          case "${{ matrix.service }}" in
+            kafka)
+              timeout 60 bash -c 'until docker-compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list; do sleep 5; done'
+              echo "✅ Kafka is responding"
+              ;;
+            spark)
+              curl -f http://localhost:8081 || exit 1
+              echo "✅ Spark Master UI is accessible"
+              ;;
+            airflow)
+              timeout 120 bash -c 'until curl -f http://localhost:8080/health; do sleep 5; done'
+              echo "✅ Airflow is healthy"
+              ;;
+            minio)
+              curl -f http://localhost:9000/minio/health/live || exit 1
+              echo "✅ MinIO is healthy"
+              ;;
+            jupyter)
+              curl -f http://localhost:8888 || exit 1
+              echo "✅ Jupyter is accessible"
+              ;;
+          esac
+
+      - name: 📋 Show ${{ matrix.service }} logs
+        if: always()
+        run: |
+          echo "=== ${{ matrix.service }} logs ==="
+          case "${{ matrix.service }}" in
+            kafka)
+              docker-compose logs --tail=50 kafka zookeeper
+              ;;
+            spark)
+              docker-compose logs --tail=50 spark-master spark-worker
+              ;;
+            airflow)
+              docker-compose logs --tail=50 airflow-webserver airflow-scheduler
+              ;;
+            minio)
+              docker-compose logs --tail=50 minio
+              ;;
+            jupyter)
+              docker-compose logs --tail=50 jupyter
+              ;;
+          esac
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          docker-compose down -v
+          docker system prune -f
+
+  integration-test:
+    name: Integration Test - Full Pipeline
+    runs-on: ubuntu-latest
+    needs: test-services
+    timeout-minutes: 60
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: 📦 Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests kafka-python minio pytest pandas
+
+      - name: 📁 Setup environment
+        run: |
+          mkdir -p airflow/dags airflow/plugins
+          mkdir -p spark/jobs spark/config
+          mkdir -p kafka/config kafka/producers
+          mkdir -p jupyter/notebooks
+          mkdir -p data logs minio/data
+          
+          if [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+
+      - name: 🚀 Start all services
+        run: |
+          echo "=== Starting all services ==="
+          docker-compose up -d
+          
+          echo "=== Waiting for services to initialize (60 seconds) ==="
+          sleep 60
+          
+          echo "=== Service status ==="
+          docker-compose ps
+
+      - name: ✅ Verify all services are running
+        run: |
+          echo "=== Checking service health ==="
+          
+          # Check Kafka
+          docker-compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list
+          echo "✅ Kafka is running"
+          
+          # Check Spark
+          curl -f http://localhost:8081 || exit 1
+          echo "✅ Spark is running"
+          
+          # Check Airflow
+          curl -f http://localhost:8080/health || exit 1
+          echo "✅ Airflow is running"
+          
+          # Check MinIO
+          curl -f http://localhost:9000/minio/health/live || exit 1
+          echo "✅ MinIO is running"
+          
+          # Check Jupyter
+          curl -f http://localhost:8888 || exit 1
+          echo "✅ Jupyter is running"
+
+      - name: 🧪 Run integration tests
+        run: |
+          cat > test_integration.py << 'EOF'
+          import requests
+          import json
+          from kafka import KafkaProducer, KafkaConsumer
+          from minio import Minio
+          import time
+          import sys
+          
+          def test_kafka():
+              """Test Kafka connectivity"""
+              print("Testing Kafka...")
+              try:
+                  producer = KafkaProducer(
+                      bootstrap_servers='localhost:9092',
+                      value_serializer=lambda v: json.dumps(v).encode('utf-8')
+                  )
+          
+                  # Send test message
+                  future = producer.send('test-topic', {'test': 'message', 'timestamp': time.time()})
+                  result = future.get(timeout=10)
+                  print(f"✅ Kafka test passed - Message sent to partition {result.partition}")
+                  return True
+              except Exception as e:
+                  print(f"❌ Kafka test failed: {e}")
+                  return False
+          
+          def test_airflow():
+              """Test Airflow API"""
+              print("Testing Airflow...")
+              try:
+                  response = requests.get(
+                      'http://localhost:8080/api/v1/dags',
+                      auth=('admin', 'admin')
+                  )
+                  if response.status_code == 200:
+                      print(f"✅ Airflow test passed - Found {len(response.json()['dags'])} DAGs")
+                      return True
+                  else:
+                      print(f"❌ Airflow test failed - Status code: {response.status_code}")
+                      return False
+              except Exception as e:
+                  print(f"❌ Airflow test failed: {e}")
+                  return False
+          
+          def test_minio():
+              """Test MinIO connectivity"""
+              print("Testing MinIO...")
+              try:
+                  client = Minio(
+                      'localhost:9000',
+                      access_key='minioadmin',
+                      secret_key='minioadmin',
+                      secure=False
+                  )
+          
+                  # List buckets
+                  buckets = client.list_buckets()
+                  print(f"✅ MinIO test passed - Found {len(buckets)} buckets")
+                  return True
+              except Exception as e:
+                  print(f"❌ MinIO test failed: {e}")
+                  return False
+          
+          def test_spark():
+              """Test Spark UI"""
+              print("Testing Spark...")
+              try:
+                  response = requests.get('http://localhost:8081')
+                  if response.status_code == 200:
+                      print("✅ Spark test passed - Master UI is accessible")
+                      return True
+                  else:
+                      print(f"❌ Spark test failed - Status code: {response.status_code}")
+                      return False
+              except Exception as e:
+                  print(f"❌ Spark test failed: {e}")
+                  return False
+          
+          def test_jupyter():
+              """Test Jupyter notebook server"""
+              print("Testing Jupyter...")
+              try:
+                  response = requests.get('http://localhost:8888/api')
+                  if response.status_code in [200, 302]:
+                      print("✅ Jupyter test passed - Server is accessible")
+                      return True
+                  else:
+                      print(f"❌ Jupyter test failed - Status code: {response.status_code}")
+                      return False
+              except Exception as e:
+                  print(f"❌ Jupyter test failed: {e}")
+                  return False
+          
+          if __name__ == "__main__":
+              print("=" * 50)
+              print("Running Integration Tests")
+              print("=" * 50)
+          
+              tests = [
+                  test_kafka,
+                  test_airflow,
+                  test_minio,
+                  test_spark,
+                  test_jupyter
+              ]
+          
+              results = []
+              for test in tests:
+                  result = test()
+                  results.append(result)
+                  print()
+          
+              print("=" * 50)
+              print("Test Summary")
+              print("=" * 50)
+              passed = sum(results)
+              total = len(results)
+              print(f"Passed: {passed}/{total}")
+          
+              if passed == total:
+                  print("🎉 All tests passed!")
+                  sys.exit(0)
+              else:
+                  print("❌ Some tests failed")
+                  sys.exit(1)
+          EOF
+          
+          python test_integration.py
+
+      - name: 🔄 Test data pipeline
+        run: |
+          echo "=== Testing data pipeline ==="
+          
+          # Create test data in MinIO
+          docker-compose exec -T minio mc mb local/test-bucket || true
+          echo "test,data,123" | docker-compose exec -T minio mc pipe local/test-bucket/test.csv
+          
+          # Create and send Kafka message
+          echo '{"event": "test", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%S)'"}'| \
+            docker-compose exec -T kafka kafka-console-producer \
+            --broker-list localhost:9092 \
+            --topic test-events
+          
+          # Verify message was sent
+          docker-compose exec -T kafka kafka-console-consumer \
+            --bootstrap-server localhost:9092 \
+            --topic test-events \
+            --from-beginning \
+            --max-messages 1 \
+            --timeout-ms 10000
+          
+          echo "✅ Data pipeline test completed"
+
+      - name: 📊 Generate test report
+        if: always()
+        run: |
+          echo "=== Test Report ==="
+          echo "Date: $(date)"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          echo "Services Status:"
+          docker-compose ps
+          echo ""
+          echo "Resource Usage:"
+          docker stats --no-stream
+
+      - name: 📋 Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Collecting logs for debugging ==="
+          mkdir -p logs-archive
+          
+          for service in $(docker-compose ps --services); do
+            docker-compose logs --no-color "$service" > "logs-archive/${service}.log" 2>&1
+          done
+          
+          echo "Logs collected in logs-archive/"
+          ls -la logs-archive/
+
+      - name: 📤 Upload logs artifact
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: service-logs
+          path: logs-archive/
+          retention-days: 7
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          echo "=== Cleaning up ==="
+          docker-compose down -v
+          docker system prune -f
+          echo "✅ Cleanup completed"
+
+  performance-test:
+    name: Performance & Load Test
+    runs-on: ubuntu-latest
+    needs: integration-test
+    timeout-minutes: 30
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 📁 Setup environment
+        run: |
+          mkdir -p airflow/dags airflow/plugins
+          mkdir -p spark/jobs spark/config
+          mkdir -p kafka/config kafka/producers
+          mkdir -p jupyter/notebooks
+          mkdir -p data logs minio/data
+          
+          if [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+
+      - name: 🚀 Start services
+        run: |
+          docker-compose up -d
+          sleep 60
+
+      - name: 🏃 Run performance tests
+        run: |
+          echo "=== Running performance tests ==="
+          
+          # Test Kafka throughput
+          echo "Testing Kafka throughput..."
+          docker-compose exec -T kafka kafka-producer-perf-test \
+            --topic perf-test \
+            --num-records 1000 \
+            --record-size 1024 \
+            --throughput 100 \
+            --producer-props bootstrap.servers=localhost:9092 || true
+          
+          # Check memory usage
+          echo ""
+          echo "=== Memory Usage ==="
+          docker stats --no-stream --format "table {{.Container}}\t{{.MemUsage}}\t{{.MemPerc}}"
+          
+          # Check response times
+          echo ""
+          echo "=== Service Response Times ==="
+          
+          echo -n "Airflow: "
+          time curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health || true
+          
+          echo -n "MinIO: "
+          time curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/minio/health/live || true
+          
+          echo -n "Spark: "
+          time curl -s -o /dev/null -w "%{http_code}" http://localhost:8081 || true
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          docker-compose down -v
+          docker system prune -f
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test-setup
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 🔐 Run Trivy security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: 📤 Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
