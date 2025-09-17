@@ -212,7 +212,7 @@ jobs:
               echo "✅ MinIO is healthy"
               ;;
             jupyter)
-              curl -f http://localhost:8888 || exit 1
+              timeout 60 bash -c 'until curl -f http://localhost:8888/api; do sleep 5; done'
               echo "✅ Jupyter is accessible"
               ;;
           esac
@@ -309,7 +309,7 @@ jobs:
           echo "✅ MinIO is running"
           
           # Check Jupyter
-          curl -f http://localhost:8888 || exit 1
+          curl -f http://localhost:8888/api || exit 1
           echo "✅ Jupyter is running"
 
       - name: 🧪 Run integration tests
