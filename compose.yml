@@ -261,7 +261,6 @@ services:
     volumes:
       - ./jupyter/notebooks:/home/jovyan/work
       - ./data:/home/jovyan/data
-      - jupyter-data:/home/jovyan/.local
     command: start-notebook.sh --NotebookApp.token='bigdata'
     networks:
       - bigdata-net
@@ -279,4 +278,3 @@ volumes:
   postgres-data:
   airflow-logs:
   spark-logs:
-  jupyter-data:
