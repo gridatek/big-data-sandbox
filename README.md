@@ -123,7 +123,7 @@ See [`examples/quickstart/`](examples/quickstart/) for the full walkthrough.
 
 ```
 big-data-sandbox/
-│── docker-compose.yml       # One-command environment
+│── compose.yml              # One-command environment
 │── .env.example            # Environment variables template
 │── airflow/
 │   ├── dags/              # Airflow DAG definitions

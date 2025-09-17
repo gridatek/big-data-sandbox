@@ -133,7 +133,7 @@ verify_services() {
 
     # Check if containers are running
     RUNNING=$(docker compose ps --services --filter "status=running" | wc -l)
-    EXPECTED=10  # Adjust based on your docker-compose.yml
+    EXPECTED=10  # Adjust based on your compose.yml
 
     if [ "$RUNNING" -lt "$EXPECTED" ]; then
         print_message "⚠️  Some services may not be running properly" "$YELLOW"

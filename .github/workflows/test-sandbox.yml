@@ -44,7 +44,7 @@ jobs:
           ls -la
           echo ""
           echo "=== Checking for required files ==="
-          for file in docker-compose.yml README.md quickstart.sh; do
+          for file in compose.yml README.md quickstart.sh; do
             if [ -f "$file" ]; then
               echo "✅ $file exists"
             else
@@ -128,7 +128,7 @@ jobs:
 
       - name: 🎨 Validate Docker Compose file
         run: |
-          echo "=== Validating docker-compose.yml ==="
+          echo "=== Validating compose.yml ==="
           docker compose config --quiet && echo "✅ Docker Compose file is valid" || exit 1
 
   test-services:
