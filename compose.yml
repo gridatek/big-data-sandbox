@@ -255,6 +255,9 @@ services:
       - JUPYTER_TOKEN=bigdata
       - PYSPARK_PYTHON=python3
       - SPARK_MASTER=spark://spark-master:7077
+      - NB_UID=1000
+      - NB_GID=100
+      - CHOWN_HOME=yes
     volumes:
       - ./jupyter/notebooks:/home/jovyan/work
       - ./data:/home/jovyan/data
