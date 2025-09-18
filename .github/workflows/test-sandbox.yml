@@ -451,7 +451,8 @@ jobs:
         run: |
           echo "=== Testing data pipeline ==="
           
-          # Create test data in MinIO
+          # Configure MinIO client and create test data
+          docker compose exec -T minio mc alias set local http://localhost:9000 minioadmin minioadmin
           docker compose exec -T minio mc mb local/test-bucket || true
           echo "test,data,123" | docker compose exec -T minio mc pipe local/test-bucket/test.csv
           
