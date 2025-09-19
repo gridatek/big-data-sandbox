@@ -40,12 +40,8 @@ jobs:
         tutorial:
           - "01_getting_started"
           - "02_advanced_analytics"
-        spark_version: ["3.5.0"]
-        python_version: ["3.11"]
-        exclude:
-          # Exclude some combinations to reduce test time
-          - spark_version: "3.5.0"
-            python_version: "3.9"
+        spark_version: ["3.4.0"]
+        python_version: ["3.10"]
 
     env:
       TUTORIAL_NAME: ${{ matrix.tutorial }}

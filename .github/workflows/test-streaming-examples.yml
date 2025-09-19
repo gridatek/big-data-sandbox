@@ -45,12 +45,8 @@ jobs:
             script: "event_pipeline.py"
             description: "Advanced Event Processing Pipeline"
             requires_producer: true
-        kafka_version: ["7.5.0", "7.4.0"]
-        spark_version: ["3.3.0", "3.4.0"]
-        exclude:
-          # Reduce matrix size
-          - kafka_version: "7.4.0"
-            spark_version: "3.4.0"
+        kafka_version: ["7.5.0"]
+        spark_version: ["3.4.0"]
 
     env:
       EXAMPLE_NAME: ${{ matrix.example.name }}

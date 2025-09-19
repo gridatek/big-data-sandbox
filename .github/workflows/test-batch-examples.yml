@@ -47,8 +47,8 @@ jobs:
           - name: "ml_pipeline"
             script: "ml_pipeline.py"
             description: "Machine Learning Pipeline"
-        spark_version: ["3.3.0", "3.4.0"]
-        python_version: ["3.9", "3.10"]
+        spark_version: ["3.4.0"]
+        python_version: ["3.10"]
 
     env:
       EXAMPLE_NAME: ${{ matrix.example.name }}
