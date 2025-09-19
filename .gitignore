@@ -30,6 +30,8 @@ data/*.xlsx
 data/*.db
 !data/sales_data.csv
 !data/sample_events.json
+!data/user_events.json
+!data/iot_sensors.csv
 !data/.gitkeep
 
 # MinIO storage

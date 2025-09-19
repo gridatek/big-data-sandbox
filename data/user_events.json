@@ -1,0 +1,22 @@
+[
+  {"user_id": "user_001", "event_type": "page_view", "page": "/home", "timestamp": "2024-01-15T10:30:00Z", "session_id": "sess_abc123", "device": "desktop", "location": "US"},
+  {"user_id": "user_001", "event_type": "click", "element": "signup_button", "timestamp": "2024-01-15T10:31:15Z", "session_id": "sess_abc123", "device": "desktop", "location": "US"},
+  {"user_id": "user_002", "event_type": "page_view", "page": "/products", "timestamp": "2024-01-15T10:32:00Z", "session_id": "sess_def456", "device": "mobile", "location": "CA"},
+  {"user_id": "user_002", "event_type": "search", "query": "wireless headphones", "timestamp": "2024-01-15T10:33:30Z", "session_id": "sess_def456", "device": "mobile", "location": "CA"},
+  {"user_id": "user_003", "event_type": "page_view", "page": "/login", "timestamp": "2024-01-15T10:35:00Z", "session_id": "sess_ghi789", "device": "tablet", "location": "UK"},
+  {"user_id": "user_003", "event_type": "login", "success": true, "timestamp": "2024-01-15T10:35:45Z", "session_id": "sess_ghi789", "device": "tablet", "location": "UK"},
+  {"user_id": "user_004", "event_type": "page_view", "page": "/cart", "timestamp": "2024-01-15T10:40:00Z", "session_id": "sess_jkl012", "device": "desktop", "location": "AU"},
+  {"user_id": "user_004", "event_type": "add_to_cart", "product_id": "prod_123", "quantity": 2, "timestamp": "2024-01-15T10:41:20Z", "session_id": "sess_jkl012", "device": "desktop", "location": "AU"},
+  {"user_id": "user_005", "event_type": "page_view", "page": "/checkout", "timestamp": "2024-01-15T10:45:00Z", "session_id": "sess_mno345", "device": "mobile", "location": "DE"},
+  {"user_id": "user_005", "event_type": "purchase", "order_id": "order_789", "amount": 299.99, "timestamp": "2024-01-15T10:47:30Z", "session_id": "sess_mno345", "device": "mobile", "location": "DE"},
+  {"user_id": "user_006", "event_type": "page_view", "page": "/support", "timestamp": "2024-01-15T11:00:00Z", "session_id": "sess_pqr678", "device": "desktop", "location": "FR"},
+  {"user_id": "user_006", "event_type": "chat_start", "topic": "return_policy", "timestamp": "2024-01-15T11:02:15Z", "session_id": "sess_pqr678", "device": "desktop", "location": "FR"},
+  {"user_id": "user_007", "event_type": "page_view", "page": "/profile", "timestamp": "2024-01-15T11:15:00Z", "session_id": "sess_stu901", "device": "mobile", "location": "JP"},
+  {"user_id": "user_007", "event_type": "update_profile", "field": "email", "timestamp": "2024-01-15T11:16:45Z", "session_id": "sess_stu901", "device": "mobile", "location": "JP"},
+  {"user_id": "user_008", "event_type": "page_view", "page": "/dashboard", "timestamp": "2024-01-15T11:30:00Z", "session_id": "sess_vwx234", "device": "tablet", "location": "BR"},
+  {"user_id": "user_008", "event_type": "download", "file": "report_2024.pdf", "timestamp": "2024-01-15T11:32:30Z", "session_id": "sess_vwx234", "device": "tablet", "location": "BR"},
+  {"user_id": "user_009", "event_type": "page_view", "page": "/settings", "timestamp": "2024-01-15T12:00:00Z", "session_id": "sess_yza567", "device": "desktop", "location": "IN"},
+  {"user_id": "user_009", "event_type": "logout", "timestamp": "2024-01-15T12:05:30Z", "session_id": "sess_yza567", "device": "desktop", "location": "IN"},
+  {"user_id": "user_010", "event_type": "page_view", "page": "/api/docs", "timestamp": "2024-01-15T12:30:00Z", "session_id": "sess_bcd890", "device": "desktop", "location": "SG"},
+  {"user_id": "user_010", "event_type": "api_call", "endpoint": "/users", "method": "GET", "timestamp": "2024-01-15T12:31:15Z", "session_id": "sess_bcd890", "device": "desktop", "location": "SG"}
+]
