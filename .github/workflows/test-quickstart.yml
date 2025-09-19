@@ -29,6 +29,13 @@ on:
           - 'full'
           - 'services_only'
           - 'pipeline_only'
+  workflow_call:
+    inputs:
+      test_mode:
+        description: 'Test mode'
+        required: false
+        type: string
+        default: 'full'
 
 jobs:
   test-quickstart:

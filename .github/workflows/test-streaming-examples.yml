@@ -22,6 +22,13 @@ on:
         description: 'Streaming test duration in seconds'
         required: false
         default: '120'
+  workflow_call:
+    inputs:
+      streaming_duration:
+        description: 'Streaming test duration in seconds'
+        required: false
+        type: string
+        default: '120'
 
 jobs:
   test-streaming-examples:

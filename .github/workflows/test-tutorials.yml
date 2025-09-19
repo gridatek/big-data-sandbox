@@ -22,11 +22,23 @@ on:
       spark_version:
         description: 'Spark version to test'
         required: false
-        default: '3.3.0'
+        default: '3.4.0'
       python_version:
         description: 'Python version to test'
         required: false
-        default: '3.9'
+        default: '3.10'
+  workflow_call:
+    inputs:
+      spark_version:
+        description: 'Spark version to test'
+        required: false
+        type: string
+        default: '3.4.0'
+      python_version:
+        description: 'Python version to test'
+        required: false
+        type: string
+        default: '3.10'
 
 jobs:
   test-tutorials:

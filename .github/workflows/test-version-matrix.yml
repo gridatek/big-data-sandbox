@@ -20,6 +20,18 @@ on:
         required: false
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      test_scope:
+        description: 'Test scope'
+        required: false
+        type: string
+        default: 'critical_only'
+      include_beta:
+        description: 'Include beta/RC versions'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   version-matrix-test:
