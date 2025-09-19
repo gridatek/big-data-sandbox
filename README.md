@@ -91,6 +91,17 @@ docker compose ps
 
 ---
 
+## 📚 Learning Resources
+
+**New to Big Data?** We have two learning paths for you:
+
+- **📓 Interactive Tutorials**: Start with `jupyter/notebooks/01_getting_started.ipynb` for hands-on learning
+- **🛠️ Production Examples**: Use `examples/` directory for real-world workflows
+
+**👉 [Read the complete Learning Guide](LEARNING_GUIDE.md)** for detailed explanations of when to use each approach.
+
+---
+
 ## 📖 First Pipeline - Real Example
 
 Try this working example in under 5 minutes:
@@ -138,15 +149,15 @@ big-data-sandbox/
 │── minio/
 │   └── data/              # Initial buckets & data
 │── jupyter/
-│   └── notebooks/         # Tutorial notebooks
+│   └── notebooks/         # 📓 Interactive learning tutorials
 │── data/
 │   ├── sales_data.csv     # Sample sales dataset
 │   ├── user_events.json   # Sample event stream
 │   └── iot_sensors.csv    # IoT sensor readings
 │── examples/
-│   ├── quickstart/        # Getting started guide
-│   ├── streaming/         # Real-time processing
-│   └── batch/             # Batch ETL examples
+│   ├── quickstart/        # 🚀 Complete workflow demos
+│   ├── streaming/         # 🌊 Production streaming apps
+│   └── batch/             # 📊 Enterprise ETL & analytics
 └── README.md              # This file
 ```
 
