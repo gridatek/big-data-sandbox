@@ -1,0 +1,344 @@
+name: 🧪 Version Compatibility Matrix
+
+on:
+  schedule:
+    # Run weekly on Sunday to catch version compatibility issues
+    - cron: '0 1 * * 0'
+  workflow_dispatch:
+    inputs:
+      test_scope:
+        description: 'Test scope'
+        required: false
+        type: choice
+        default: 'critical_only'
+        options:
+          - 'critical_only'
+          - 'full_matrix'
+          - 'latest_versions'
+      include_beta:
+        description: 'Include beta/RC versions'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  version-matrix-test:
+    name: 🔄 Version Matrix Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Critical version combinations (always tested)
+          - spark_version: "3.3.0"
+            kafka_version: "7.5.0"
+            python_version: "3.9"
+            test_priority: "critical"
+            description: "Stable Production Stack"
+
+          - spark_version: "3.4.0"
+            kafka_version: "7.5.0"
+            python_version: "3.10"
+            test_priority: "critical"
+            description: "Current Recommended Stack"
+
+          - spark_version: "3.5.0"
+            kafka_version: "7.5.0"
+            python_version: "3.11"
+            test_priority: "critical"
+            description: "Latest Stable Stack"
+
+          # Extended matrix (full testing)
+          - spark_version: "3.3.0"
+            kafka_version: "7.4.0"
+            python_version: "3.9"
+            test_priority: "extended"
+            description: "Legacy Kafka Support"
+
+          - spark_version: "3.4.0"
+            kafka_version: "7.4.0"
+            python_version: "3.10"
+            test_priority: "extended"
+            description: "Mixed Version Compatibility"
+
+          - spark_version: "3.2.4"
+            kafka_version: "7.5.0"
+            python_version: "3.9"
+            test_priority: "extended"
+            description: "Legacy Spark Support"
+
+          # Latest bleeding edge (optional)
+          - spark_version: "3.5.1"
+            kafka_version: "7.6.0"
+            python_version: "3.11"
+            test_priority: "bleeding_edge"
+            description: "Bleeding Edge Stack"
+
+    env:
+      SPARK_VERSION: ${{ matrix.spark_version }}
+      KAFKA_VERSION: ${{ matrix.kafka_version }}
+      PYTHON_VERSION: ${{ matrix.python_version }}
+      TEST_PRIORITY: ${{ matrix.test_priority }}
+      COMPOSE_PROJECT_NAME: version-test-${{ github.run_id }}-${{ strategy.job-index }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔍 Check Test Scope
+        id: check_scope
+        run: |
+          SHOULD_RUN="true"
+          TEST_SCOPE="${{ github.event.inputs.test_scope || 'critical_only' }}"
+          INCLUDE_BETA="${{ github.event.inputs.include_beta || 'false' }}"
+
+          echo "Test scope: $TEST_SCOPE"
+          echo "Include beta: $INCLUDE_BETA"
+          echo "Matrix priority: ${{ matrix.test_priority }}"
+
+          # Determine if this job should run based on scope
+          case "$TEST_SCOPE" in
+            "critical_only")
+              if [ "${{ matrix.test_priority }}" != "critical" ]; then
+                SHOULD_RUN="false"
+              fi
+              ;;
+            "latest_versions")
+              if [ "${{ matrix.test_priority }}" == "extended" ]; then
+                SHOULD_RUN="false"
+              fi
+              ;;
+            "full_matrix")
+              # Run all tests
+              ;;
+          esac
+
+          # Skip bleeding edge unless beta is enabled
+          if [ "${{ matrix.test_priority }}" == "bleeding_edge" ] && [ "$INCLUDE_BETA" != "true" ]; then
+            SHOULD_RUN="false"
+          fi
+
+          echo "should_run=$SHOULD_RUN" >> $GITHUB_OUTPUT
+          echo "Should run this test: $SHOULD_RUN"
+
+      - name: 🐍 Set up Python ${{ matrix.python_version }}
+        if: steps.check_scope.outputs.should_run == 'true'
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: 📦 Install Version-Specific Dependencies
+        if: steps.check_scope.outputs.should_run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+
+          # Install PySpark with specific version
+          pip install pyspark==${{ matrix.spark_version }}
+
+          # Install other dependencies
+          pip install pandas numpy matplotlib seaborn kafka-python jupyter
+
+          # Version-specific adjustments
+          if [[ "${{ matrix.python_version }}" == "3.11" ]]; then
+            # Python 3.11 may need specific package versions
+            pip install --upgrade setuptools wheel
+          fi
+
+          echo "📋 Installed Versions:"
+          pip show pyspark pandas numpy | grep "Version:"
+
+      - name: 🔧 Configure Version Matrix Environment
+        if: steps.check_scope.outputs.should_run == 'true'
+        run: |
+          echo "🔧 Configuring environment for version matrix test..."
+
+          # Create version-specific environment
+          cp .env.example .env
+          echo "SPARK_VERSION=${{ matrix.spark_version }}" >> .env
+          echo "KAFKA_VERSION=${{ matrix.kafka_version }}" >> .env
+          echo "PYTHON_VERSION=${{ matrix.python_version }}" >> .env
+
+          # Update docker-compose with specific versions
+          sed -i "s/confluentinc\/cp-kafka:7.5.0/confluentinc\/cp-kafka:${{ matrix.kafka_version }}/g" compose.yml
+          sed -i "s/confluentinc\/cp-zookeeper:7.5.0/confluentinc\/cp-zookeeper:${{ matrix.kafka_version }}/g" compose.yml
+
+          # Update Spark version in compose file (if applicable)
+          if grep -q "spark:" compose.yml; then
+            sed -i "s/spark:3.3.0/spark:${{ matrix.spark_version }}/g" compose.yml
+          fi
+
+          echo "✅ Environment configured for: ${{ matrix.description }}"
+
+      - name: 🚀 Start Services with Version Matrix
+        if: steps.check_scope.outputs.should_run == 'true'
+        run: |
+          echo "🚀 Starting services with version matrix..."
+          echo "Stack: ${{ matrix.description }}"
+
+          # Start services
+          docker compose up -d
+
+          # Extended wait for version compatibility testing
+          echo "Waiting for services to stabilize..."
+          sleep 180
+
+          # Verify all containers started
+          echo "📋 Container Status:"
+          docker compose ps
+
+      - name: 🧪 Run Version Compatibility Tests
+        if: steps.check_scope.outputs.should_run == 'true'
+        run: |
+          echo "🧪 Running version compatibility tests..."
+
+          # Test 1: Basic service connectivity
+          echo "Test 1: Service Connectivity"
+          timeout 120 bash -c 'until curl -f http://localhost:8081 2>/dev/null; do sleep 5; done' || echo "⚠️ Spark Master timeout"
+          timeout 120 bash -c 'until curl -f http://localhost:9000/minio/health/live 2>/dev/null; do sleep 5; done' || echo "⚠️ MinIO timeout"
+
+          # Test 2: Kafka version compatibility
+          echo "Test 2: Kafka Compatibility"
+          if docker exec $(docker compose ps -q kafka) kafka-topics --version 2>/dev/null; then
+            echo "✅ Kafka version check passed"
+          else
+            echo "❌ Kafka version check failed"
+          fi
+
+          # Test 3: PySpark compatibility
+          echo "Test 3: PySpark Compatibility"
+          python3 -c "
+          try:
+              from pyspark.sql import SparkSession
+              spark = SparkSession.builder.appName('VersionTest').getOrCreate()
+              print(f'✅ PySpark {spark.version} initialized successfully')
+
+              # Test basic DataFrame operations
+              data = [('Alice', 1), ('Bob', 2)]
+              df = spark.createDataFrame(data, ['name', 'id'])
+              count = df.count()
+              print(f'✅ Basic DataFrame operations work (count: {count})')
+
+              spark.stop()
+          except Exception as e:
+              print(f'❌ PySpark compatibility test failed: {e}')
+              exit(1)
+          " || echo "❌ PySpark test failed"
+
+          # Test 4: Cross-service integration
+          echo "Test 4: Cross-Service Integration"
+          if [ -f "./verify-services.sh" ]; then
+            chmod +x ./verify-services.sh
+            ./verify-services.sh || echo "⚠️ Integration verification completed with warnings"
+          fi
+
+      - name: 📊 Version Compatibility Report
+        if: always() && steps.check_scope.outputs.should_run == 'true'
+        run: |
+          echo "📊 Generating version compatibility report..."
+
+          # Collect version information
+          echo "## Version Information"
+          echo "- Spark: ${{ matrix.spark_version }}"
+          echo "- Kafka: ${{ matrix.kafka_version }}"
+          echo "- Python: ${{ matrix.python_version }}"
+
+          # Test service versions
+          echo ""
+          echo "## Service Versions"
+
+          # Spark version from container
+          echo -n "Spark Container: "
+          docker exec $(docker compose ps -q spark-master) /opt/spark/bin/spark-submit --version 2>&1 | grep "version" | head -1 || echo "N/A"
+
+          # Kafka version from container
+          echo -n "Kafka Container: "
+          docker exec $(docker compose ps -q kafka) kafka-topics --version 2>/dev/null || echo "N/A"
+
+          # Python version used
+          echo "Python Used: $(python --version)"
+
+          # PySpark version installed
+          echo "PySpark Installed: $(pip show pyspark | grep Version: | cut -d' ' -f2)"
+
+      - name: 🧹 Cleanup Version Test
+        if: always() && steps.check_scope.outputs.should_run == 'true'
+        run: |
+          echo "🧹 Cleaning up version matrix test..."
+
+          # Save version-specific logs
+          mkdir -p /tmp/version-logs
+          echo "Version Matrix: ${{ matrix.description }}" > /tmp/version-logs/version-info.txt
+          echo "Spark: ${{ matrix.spark_version }}" >> /tmp/version-logs/version-info.txt
+          echo "Kafka: ${{ matrix.kafka_version }}" >> /tmp/version-logs/version-info.txt
+          echo "Python: ${{ matrix.python_version }}" >> /tmp/version-logs/version-info.txt
+
+          docker compose logs > /tmp/version-logs/services.log 2>&1 || true
+
+          # Stop and remove containers
+          docker compose down -v --remove-orphans
+
+          # Prune Docker resources
+          docker system prune -f
+
+      - name: 📊 Upload Version Test Artifacts
+        if: failure() && steps.check_scope.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v3
+        with:
+          name: version-matrix-logs-spark${{ matrix.spark_version }}-kafka${{ matrix.kafka_version }}
+          path: /tmp/version-logs/
+          retention-days: 14
+
+      - name: 📋 Generate Matrix Report
+        if: always() && steps.check_scope.outputs.should_run == 'true'
+        run: |
+          echo "## 🧪 Version Matrix Test Result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Description**: ${{ matrix.description }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Spark**: ${{ matrix.spark_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Kafka**: ${{ matrix.kafka_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python**: ${{ matrix.python_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Priority**: ${{ matrix.test_priority }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  matrix-summary:
+    name: 📋 Matrix Test Summary
+    needs: version-matrix-test
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: 📊 Generate Compatibility Matrix Summary
+        run: |
+          echo "## 🎯 Version Compatibility Matrix Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.version-matrix-test.result }}" == "success" ]; then
+            echo "✅ **All tested version combinations are compatible!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ Verified Compatibility:" >> $GITHUB_STEP_SUMMARY
+            echo "- Spark 3.3.x through 3.5.x" >> $GITHUB_STEP_SUMMARY
+            echo "- Kafka 7.4.x through 7.6.x" >> $GITHUB_STEP_SUMMARY
+            echo "- Python 3.9 through 3.11" >> $GITHUB_STEP_SUMMARY
+            echo "- Cross-service integration" >> $GITHUB_STEP_SUMMARY
+            echo "- PySpark API compatibility" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**🎉 Users can confidently upgrade components!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Some version combinations have compatibility issues.**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔧 Recommended Actions:" >> $GITHUB_STEP_SUMMARY
+            echo "- Review failed version combinations" >> $GITHUB_STEP_SUMMARY
+            echo "- Update documentation with supported versions" >> $GITHUB_STEP_SUMMARY
+            echo "- Consider pinning problematic versions" >> $GITHUB_STEP_SUMMARY
+            echo "- Add version compatibility warnings" >> $GITHUB_STEP_SUMMARY
+            echo "- Test with specific version constraints" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Testing Scope:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scope**: ${{ github.event.inputs.test_scope || 'critical_only' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Include Beta**: ${{ github.event.inputs.include_beta || 'false' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY

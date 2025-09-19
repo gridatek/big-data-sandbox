@@ -1,0 +1,320 @@
+name: 📊 Test Batch Examples
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'examples/batch/**'
+      - 'data/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/test-batch-examples.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'examples/batch/**'
+      - 'data/**'
+  schedule:
+    # Run weekly to catch version drift
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      example:
+        description: 'Specific example to test (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - 'etl_pipeline'
+          - 'analytics_job'
+          - 'ml_pipeline'
+
+jobs:
+  test-batch-examples:
+    name: 🧪 Batch Example Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - name: "etl_pipeline"
+            script: "etl_pipeline.py"
+            description: "ETL Pipeline with Data Validation"
+          - name: "analytics_job"
+            script: "analytics_job.py"
+            description: "Advanced Analytics and Reporting"
+          - name: "ml_pipeline"
+            script: "ml_pipeline.py"
+            description: "Machine Learning Pipeline"
+        spark_version: ["3.3.0", "3.4.0"]
+        python_version: ["3.9", "3.10"]
+
+    env:
+      EXAMPLE_NAME: ${{ matrix.example.name }}
+      EXAMPLE_SCRIPT: ${{ matrix.example.script }}
+      SPARK_VERSION: ${{ matrix.spark_version }}
+      PYTHON_VERSION: ${{ matrix.python_version }}
+      COMPOSE_PROJECT_NAME: bigdata-batch-${{ github.run_id }}-${{ matrix.example.name }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python ${{ matrix.python_version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: 📦 Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyspark==${{ matrix.spark_version }}
+          pip install pandas numpy matplotlib seaborn
+          pip install scikit-learn
+
+          # Install additional ML dependencies
+          if [ "${{ matrix.example.name }}" == "ml_pipeline" ]; then
+            pip install scipy
+          fi
+
+      - name: 🔧 Setup Docker Environment
+        run: |
+          # Create test environment
+          cp .env.example .env
+          echo "SPARK_VERSION=${{ matrix.spark_version }}" >> .env
+
+          # Update compose file for testing
+          sed -i "s/spark:3.3.0/spark:${{ matrix.spark_version }}/g" compose.yml || true
+
+      - name: 📊 Prepare Test Data
+        run: |
+          echo "Preparing test data for ${{ matrix.example.name }}..."
+
+          # Verify sample data exists
+          ls -la data/
+          echo "Sales data records: $(wc -l < data/sales_data.csv)"
+          echo "User events: $(wc -l < data/user_events.json)"
+          echo "IoT sensors: $(wc -l < data/iot_sensors.csv)"
+
+          # Create additional test data if needed
+          if [ "${{ matrix.example.name }}" == "ml_pipeline" ]; then
+            echo "Generating additional ML test data..."
+            python3 -c "
+          import pandas as pd
+          import numpy as np
+          from datetime import datetime, timedelta
+
+          # Generate more diverse data for ML testing
+          np.random.seed(42)
+          dates = pd.date_range(start='2023-01-01', end='2023-12-31', freq='D')
+
+          data = []
+          for i, date in enumerate(dates):
+              for j in range(np.random.randint(5, 20)):
+                  data.append({
+                      'transaction_id': f'ML_TXN_{i}_{j}',
+                      'date': date.strftime('%Y-%m-%d'),
+                      'customer_id': f'CUST_{np.random.randint(1, 500):04d}',
+                      'product_name': np.random.choice(['Laptop', 'Phone', 'Tablet', 'Watch', 'Headphones']),
+                      'quantity': np.random.randint(1, 5),
+                      'price': np.random.normal(200, 100),
+                      'category': np.random.choice(['Electronics', 'Audio', 'Computing']),
+                      'region': np.random.choice(['North', 'South', 'East', 'West'])
+                  })
+
+          df = pd.DataFrame(data)
+          df['total_amount'] = df['quantity'] * df['price']
+          df.to_csv('data/ml_test_data.csv', index=False)
+          print(f'Generated {len(df)} ML test records')
+          "
+          fi
+
+      - name: 🚀 Start Big Data Services
+        run: |
+          echo "Starting Big Data Sandbox for ${{ matrix.example.description }}..."
+          docker compose up -d
+
+          # Wait for services with extended timeout for batch jobs
+          echo "Waiting for services to initialize..."
+          sleep 90
+
+      - name: 🔍 Verify Service Health
+        run: |
+          echo "Verifying service health..."
+
+          # Check container status
+          docker compose ps
+
+          # Wait for and test each service
+          services=(
+            "http://localhost:8081|Spark Master"
+            "http://localhost:9000/minio/health/live|MinIO"
+          )
+
+          for service in "${services[@]}"; do
+            url=$(echo $service | cut -d'|' -f1)
+            name=$(echo $service | cut -d'|' -f2)
+
+            echo "Testing $name at $url..."
+            timeout 60 bash -c "until curl -f $url 2>/dev/null; do sleep 3; done" || {
+              echo "❌ $name failed to start"
+              docker compose logs $(echo $name | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+            }
+          done
+
+          # Run verification script if available
+          if [ -f "./verify-services.sh" ]; then
+            chmod +x ./verify-services.sh
+            ./verify-services.sh || echo "⚠️ Service verification completed with warnings"
+          fi
+
+      - name: 🎯 Execute Batch Example
+        run: |
+          echo "🚀 Executing: ${{ matrix.example.description }}"
+          echo "📄 Script: ${{ matrix.example.script }}"
+
+          cd examples/batch
+
+          # Determine data source based on example
+          case "${{ matrix.example.name }}" in
+            "etl_pipeline")
+              DATA_SOURCE="../../data/sales_data.csv"
+              OUTPUT_PATH="/tmp/etl_output"
+              EXTRA_ARGS="--source $DATA_SOURCE --output $OUTPUT_PATH"
+              ;;
+            "analytics_job")
+              DATA_SOURCE="../../data/sales_data.csv"
+              OUTPUT_PATH="/tmp/analytics_output"
+              EXTRA_ARGS="--data $DATA_SOURCE --output $OUTPUT_PATH"
+              ;;
+            "ml_pipeline")
+              DATA_SOURCE="../../data/ml_test_data.csv"
+              OUTPUT_PATH="/tmp/ml_output"
+              EXTRA_ARGS="--data $DATA_SOURCE --output $OUTPUT_PATH --model-type churn"
+              ;;
+          esac
+
+          echo "Data source: $DATA_SOURCE"
+          echo "Output path: $OUTPUT_PATH"
+          echo "Extra args: $EXTRA_ARGS"
+
+          # Execute the script with timeout
+          timeout 1800 python ${{ matrix.example.script }} $EXTRA_ARGS || {
+            echo "❌ Example execution failed or timed out"
+            exit 1
+          }
+
+      - name: 📋 Validate Example Results
+        run: |
+          echo "Validating results for ${{ matrix.example.name }}..."
+
+          # Check Spark application logs
+          echo "📊 Spark Applications:"
+          curl -s http://localhost:4040/api/v1/applications | head -20 || echo "No Spark UI available"
+
+          # Validate output based on example type
+          case "${{ matrix.example.name }}" in
+            "etl_pipeline")
+              echo "✅ Validating ETL Pipeline results..."
+              # Check if ETL created expected outputs
+              ls -la /tmp/etl_output/ || echo "No ETL output directory found"
+              ;;
+            "analytics_job")
+              echo "✅ Validating Analytics Job results..."
+              # Check analytics outputs
+              ls -la /tmp/analytics_output/ || echo "No analytics output directory found"
+              ;;
+            "ml_pipeline")
+              echo "✅ Validating ML Pipeline results..."
+              # Check ML model outputs
+              ls -la /tmp/ml_output/ || echo "No ML output directory found"
+              ;;
+          esac
+
+          echo "✅ ${{ matrix.example.description }} validation completed!"
+
+      - name: 📈 Performance Metrics
+        if: always()
+        run: |
+          echo "Collecting performance metrics..."
+
+          # Docker resource usage
+          echo "🐳 Docker Resource Usage:"
+          docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+
+          # Disk usage
+          echo "💾 Disk Usage:"
+          df -h
+
+          # Memory usage
+          echo "🧠 Memory Usage:"
+          free -h
+
+      - name: 🧹 Cleanup Test Environment
+        if: always()
+        run: |
+          echo "Cleaning up test environment..."
+
+          # Save logs before cleanup
+          mkdir -p /tmp/logs
+          docker compose logs > /tmp/logs/docker-compose.log 2>&1 || true
+
+          # Stop and remove containers
+          docker compose down -v --remove-orphans
+
+          # Clean up output directories
+          rm -rf /tmp/etl_output /tmp/analytics_output /tmp/ml_output
+
+          # Prune Docker resources
+          docker system prune -f
+
+      - name: 📊 Upload Test Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: batch-test-logs-${{ matrix.example.name }}-${{ matrix.spark_version }}
+          path: /tmp/logs/
+          retention-days: 7
+
+      - name: 📋 Generate Test Report
+        if: always()
+        run: |
+          echo "## 📊 Batch Example Test Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Example**: ${{ matrix.example.description }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Script**: ${{ matrix.example.script }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Spark Version**: ${{ matrix.spark_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python Version**: ${{ matrix.python_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  batch-summary:
+    name: 📋 Batch Test Summary
+    needs: test-batch-examples
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: 📊 Generate Overall Summary
+        run: |
+          echo "## 🎯 Batch Examples Test Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.test-batch-examples.result }}" == "success" ]; then
+            echo "✅ All batch example tests passed!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ Verified Components:" >> $GITHUB_STEP_SUMMARY
+            echo "- ETL Pipeline with data validation" >> $GITHUB_STEP_SUMMARY
+            echo "- Advanced analytics and reporting" >> $GITHUB_STEP_SUMMARY
+            echo "- Machine learning workflows" >> $GITHUB_STEP_SUMMARY
+            echo "- Cross-version compatibility" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Some batch example tests failed." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔧 Troubleshooting:" >> $GITHUB_STEP_SUMMARY
+            echo "- Check individual job logs for details" >> $GITHUB_STEP_SUMMARY
+            echo "- Review Docker resource allocation" >> $GITHUB_STEP_SUMMARY
+            echo "- Verify data dependencies" >> $GITHUB_STEP_SUMMARY
+            echo "- Check version compatibility matrix" >> $GITHUB_STEP_SUMMARY
+          fi

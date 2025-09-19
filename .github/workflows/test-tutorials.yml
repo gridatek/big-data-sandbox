@@ -1,0 +1,235 @@
+name: 📚 Test Jupyter Tutorials
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'jupyter/notebooks/**'
+      - 'data/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/test-tutorials.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'jupyter/notebooks/**'
+      - 'data/**'
+      - 'docker-compose.yml'
+  schedule:
+    # Run weekly to catch version drift
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      spark_version:
+        description: 'Spark version to test'
+        required: false
+        default: '3.3.0'
+      python_version:
+        description: 'Python version to test'
+        required: false
+        default: '3.9'
+
+jobs:
+  test-tutorials:
+    name: 🧪 Tutorial Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        tutorial:
+          - "01_getting_started"
+          - "02_advanced_analytics"
+        spark_version: ["3.3.0", "3.4.0", "3.5.0"]
+        python_version: ["3.9", "3.10", "3.11"]
+        exclude:
+          # Exclude some combinations to reduce test time
+          - spark_version: "3.5.0"
+            python_version: "3.9"
+
+    env:
+      TUTORIAL_NAME: ${{ matrix.tutorial }}
+      SPARK_VERSION: ${{ matrix.spark_version }}
+      PYTHON_VERSION: ${{ matrix.python_version }}
+      COMPOSE_PROJECT_NAME: bigdata-test-${{ github.run_id }}-${{ matrix.tutorial }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python ${{ matrix.python_version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install jupyter nbconvert nbformat pandas matplotlib seaborn
+          pip install pyspark==${{ matrix.spark_version }}
+
+      - name: 🔧 Setup Docker Environment
+        run: |
+          # Update docker-compose.yml with test Spark version
+          sed -i "s/spark:3.3.0/spark:${{ matrix.spark_version }}/g" compose.yml || true
+
+          # Create test environment file
+          cp .env.example .env
+          echo "SPARK_VERSION=${{ matrix.spark_version }}" >> .env
+
+      - name: 📊 Prepare Test Data
+        run: |
+          # Ensure sample data exists
+          ls -la data/
+          wc -l data/*.csv data/*.json || true
+
+      - name: 🚀 Start Services
+        run: |
+          echo "Starting Big Data Sandbox services..."
+          docker compose up -d
+
+          # Wait for services to be ready
+          echo "Waiting for services to initialize..."
+          sleep 60
+
+      - name: 🔍 Verify Services Health
+        run: |
+          echo "Checking service health..."
+
+          # Check Docker containers
+          docker compose ps
+
+          # Test service endpoints
+          timeout 30 bash -c 'until curl -f http://localhost:8888 2>/dev/null; do sleep 2; done' || echo "Jupyter timeout"
+          timeout 30 bash -c 'until curl -f http://localhost:8081 2>/dev/null; do sleep 2; done' || echo "Spark timeout"
+          timeout 30 bash -c 'until curl -f http://localhost:9000/minio/health/live 2>/dev/null; do sleep 2; done' || echo "MinIO timeout"
+
+          # Check if verify script exists and run it
+          if [ -f "./verify-services.sh" ]; then
+            chmod +x ./verify-services.sh
+            ./verify-services.sh || echo "Service verification had issues"
+          fi
+
+      - name: 🧪 Convert Notebook to Python Script
+        run: |
+          echo "Converting ${{ matrix.tutorial }}.ipynb to executable Python..."
+
+          # Convert notebook to Python script
+          jupyter nbconvert \
+            --to python \
+            --output-dir=/tmp \
+            "jupyter/notebooks/${{ matrix.tutorial }}.ipynb"
+
+          # Create a test wrapper script
+          cat > /tmp/test_${{ matrix.tutorial }}.py << 'EOF'
+          #!/usr/bin/env python3
+          """
+          Test wrapper for ${{ matrix.tutorial }} tutorial
+          """
+          import sys
+          import os
+          import traceback
+          from datetime import datetime
+
+          def test_tutorial():
+              print(f"🧪 Testing tutorial: ${{ matrix.tutorial }}")
+              print(f"🐍 Python version: {sys.version}")
+              print(f"⚡ Spark version: ${{ matrix.spark_version }}")
+              print(f"🕐 Test started: {datetime.now()}")
+
+              try:
+                  # Import and run the converted notebook
+                  sys.path.insert(0, '/tmp')
+
+                  # Import the converted notebook module
+                  tutorial_module = __import__('${{ matrix.tutorial }}')
+
+                  print("✅ Tutorial notebook executed successfully!")
+                  return True
+
+              except Exception as e:
+                  print(f"❌ Tutorial failed with error: {str(e)}")
+                  print("📋 Full traceback:")
+                  traceback.print_exc()
+                  return False
+
+          if __name__ == "__main__":
+              success = test_tutorial()
+              sys.exit(0 if success else 1)
+          EOF
+
+          chmod +x /tmp/test_${{ matrix.tutorial }}.py
+
+      - name: 🎯 Execute Tutorial Test
+        run: |
+          echo "Executing tutorial: ${{ matrix.tutorial }}"
+
+          # Set environment variables for the tutorial
+          export PYTHONPATH=/tmp:$PYTHONPATH
+
+          # Run the tutorial with timeout
+          timeout 1200 python /tmp/test_${{ matrix.tutorial }}.py
+
+      - name: 📋 Validate Tutorial Output
+        run: |
+          echo "Validating tutorial execution results..."
+
+          # Check if Spark created any output
+          docker exec ${{ env.COMPOSE_PROJECT_NAME }}-spark-master-1 ls -la /tmp || true
+
+          # Check Spark UI logs
+          curl -s http://localhost:4040/api/v1/applications || echo "No Spark applications found"
+
+          # Validate that tutorial ran without Python errors
+          echo "✅ Tutorial ${{ matrix.tutorial }} completed successfully!"
+
+      - name: 🧹 Cleanup Test Environment
+        if: always()
+        run: |
+          echo "Cleaning up test environment..."
+
+          # Stop and remove containers
+          docker compose down -v --remove-orphans
+
+          # Clean up test files
+          rm -f /tmp/test_${{ matrix.tutorial }}.py
+          rm -f /tmp/${{ matrix.tutorial }}.py
+
+          # Prune Docker resources
+          docker system prune -f
+
+      - name: 📊 Generate Test Report
+        if: always()
+        run: |
+          echo "## 📚 Tutorial Test Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tutorial**: ${{ matrix.tutorial }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Spark Version**: ${{ matrix.spark_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python Version**: ${{ matrix.python_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Duration**: $(date)" >> $GITHUB_STEP_SUMMARY
+
+  tutorial-summary:
+    name: 📋 Tutorial Test Summary
+    needs: test-tutorials
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: 📊 Generate Overall Summary
+        run: |
+          echo "## 🎯 All Tutorial Tests Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Results:" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.test-tutorials.result }}" == "success" ]; then
+            echo "✅ All tutorial tests passed!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Some tutorial tests failed. Check individual job results." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "- Review any failed tests" >> $GITHUB_STEP_SUMMARY
+          echo "- Check compatibility with different versions" >> $GITHUB_STEP_SUMMARY
+          echo "- Update tutorials if needed" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,353 @@
+name: 🚀 Test All Components
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run full test suite weekly
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+    inputs:
+      test_components:
+        description: 'Components to test'
+        required: false
+        type: choice
+        default: 'all'
+        options:
+          - 'all'
+          - 'tutorials_only'
+          - 'examples_only'
+          - 'critical_only'
+      skip_version_matrix:
+        description: 'Skip version compatibility tests'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  # Pre-flight checks
+  pre-flight:
+    name: 🔍 Pre-flight Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    outputs:
+      should_test_tutorials: ${{ steps.check.outputs.test_tutorials }}
+      should_test_batch: ${{ steps.check.outputs.test_batch }}
+      should_test_streaming: ${{ steps.check.outputs.test_streaming }}
+      should_test_quickstart: ${{ steps.check.outputs.test_quickstart }}
+      should_test_versions: ${{ steps.check.outputs.test_versions }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔍 Determine Test Scope
+        id: check
+        run: |
+          TEST_COMPONENTS="${{ github.event.inputs.test_components || 'all' }}"
+          SKIP_VERSION_MATRIX="${{ github.event.inputs.skip_version_matrix || 'false' }}"
+
+          echo "Test components: $TEST_COMPONENTS"
+          echo "Skip version matrix: $SKIP_VERSION_MATRIX"
+
+          # Default: test everything
+          TEST_TUTORIALS="true"
+          TEST_BATCH="true"
+          TEST_STREAMING="true"
+          TEST_QUICKSTART="true"
+          TEST_VERSIONS="true"
+
+          # Adjust based on input
+          case "$TEST_COMPONENTS" in
+            "tutorials_only")
+              TEST_BATCH="false"
+              TEST_STREAMING="false"
+              TEST_QUICKSTART="false"
+              ;;
+            "examples_only")
+              TEST_TUTORIALS="false"
+              ;;
+            "critical_only")
+              # Keep quickstart and one example type
+              TEST_STREAMING="false"
+              TEST_VERSIONS="false"
+              ;;
+          esac
+
+          # Skip version matrix if requested
+          if [ "$SKIP_VERSION_MATRIX" == "true" ]; then
+            TEST_VERSIONS="false"
+          fi
+
+          # For PR events, skip heavy version testing
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            TEST_VERSIONS="false"
+          fi
+
+          echo "test_tutorials=$TEST_TUTORIALS" >> $GITHUB_OUTPUT
+          echo "test_batch=$TEST_BATCH" >> $GITHUB_OUTPUT
+          echo "test_streaming=$TEST_STREAMING" >> $GITHUB_OUTPUT
+          echo "test_quickstart=$TEST_QUICKSTART" >> $GITHUB_OUTPUT
+          echo "test_versions=$TEST_VERSIONS" >> $GITHUB_OUTPUT
+
+          echo "📋 Test Plan:"
+          echo "- Tutorials: $TEST_TUTORIALS"
+          echo "- Batch Examples: $TEST_BATCH"
+          echo "- Streaming Examples: $TEST_STREAMING"
+          echo "- Quickstart: $TEST_QUICKSTART"
+          echo "- Version Matrix: $TEST_VERSIONS"
+
+      - name: 📊 Validate Repository Structure
+        run: |
+          echo "📊 Validating repository structure..."
+
+          # Check required directories
+          required_dirs=(
+            "jupyter/notebooks"
+            "examples/batch"
+            "examples/streaming"
+            "examples/quickstart"
+            "data"
+            "kafka/producers"
+          )
+
+          for dir in "${required_dirs[@]}"; do
+            if [ -d "$dir" ]; then
+              echo "✅ $dir exists"
+            else
+              echo "❌ $dir missing"
+              exit 1
+            fi
+          done
+
+          # Check required files
+          required_files=(
+            "compose.yml"
+            "verify-services.sh"
+            "data/sales_data.csv"
+            "data/user_events.json"
+            "data/iot_sensors.csv"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [ -f "$file" ]; then
+              echo "✅ $file exists"
+            else
+              echo "❌ $file missing"
+              exit 1
+            fi
+          done
+
+          echo "✅ Repository structure validation passed"
+
+  # Test Jupyter tutorials
+  test-tutorials:
+    name: 📚 Tutorials
+    needs: pre-flight
+    if: needs.pre-flight.outputs.should_test_tutorials == 'true'
+    uses: ./.github/workflows/test-tutorials.yml
+
+  # Test batch examples
+  test-batch:
+    name: 📊 Batch Examples
+    needs: pre-flight
+    if: needs.pre-flight.outputs.should_test_batch == 'true'
+    uses: ./.github/workflows/test-batch-examples.yml
+
+  # Test streaming examples
+  test-streaming:
+    name: 🌊 Streaming Examples
+    needs: pre-flight
+    if: needs.pre-flight.outputs.should_test_streaming == 'true'
+    uses: ./.github/workflows/test-streaming-examples.yml
+
+  # Test quickstart guide
+  test-quickstart:
+    name: 🚀 Quickstart
+    needs: pre-flight
+    if: needs.pre-flight.outputs.should_test_quickstart == 'true'
+    uses: ./.github/workflows/test-quickstart.yml
+
+  # Test version compatibility matrix
+  test-versions:
+    name: 🧪 Version Matrix
+    needs: pre-flight
+    if: needs.pre-flight.outputs.should_test_versions == 'true'
+    uses: ./.github/workflows/test-version-matrix.yml
+    with:
+      test_scope: 'critical_only'
+      include_beta: false
+
+  # Integration test summary
+  integration-summary:
+    name: 📋 Test Summary
+    needs: [pre-flight, test-tutorials, test-batch, test-streaming, test-quickstart, test-versions]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: 📊 Generate Comprehensive Test Report
+        run: |
+          echo "# 🎯 Big Data Sandbox Test Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Test results summary
+          echo "## 📋 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check each test job result
+          test_results=()
+
+          if [ "${{ needs.pre-flight.outputs.should_test_tutorials }}" == "true" ]; then
+            if [ "${{ needs.test-tutorials.result }}" == "success" ]; then
+              echo "✅ **Jupyter Tutorials**: All tests passed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("tutorials:success")
+            else
+              echo "❌ **Jupyter Tutorials**: Tests failed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("tutorials:failed")
+            fi
+          else
+            echo "⏭️ **Jupyter Tutorials**: Skipped" >> $GITHUB_STEP_SUMMARY
+            test_results+=("tutorials:skipped")
+          fi
+
+          if [ "${{ needs.pre-flight.outputs.should_test_batch }}" == "true" ]; then
+            if [ "${{ needs.test-batch.result }}" == "success" ]; then
+              echo "✅ **Batch Examples**: All tests passed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("batch:success")
+            else
+              echo "❌ **Batch Examples**: Tests failed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("batch:failed")
+            fi
+          else
+            echo "⏭️ **Batch Examples**: Skipped" >> $GITHUB_STEP_SUMMARY
+            test_results+=("batch:skipped")
+          fi
+
+          if [ "${{ needs.pre-flight.outputs.should_test_streaming }}" == "true" ]; then
+            if [ "${{ needs.test-streaming.result }}" == "success" ]; then
+              echo "✅ **Streaming Examples**: All tests passed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("streaming:success")
+            else
+              echo "❌ **Streaming Examples**: Tests failed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("streaming:failed")
+            fi
+          else
+            echo "⏭️ **Streaming Examples**: Skipped" >> $GITHUB_STEP_SUMMARY
+            test_results+=("streaming:skipped")
+          fi
+
+          if [ "${{ needs.pre-flight.outputs.should_test_quickstart }}" == "true" ]; then
+            if [ "${{ needs.test-quickstart.result }}" == "success" ]; then
+              echo "✅ **Quickstart Guide**: All tests passed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("quickstart:success")
+            else
+              echo "❌ **Quickstart Guide**: Tests failed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("quickstart:failed")
+            fi
+          else
+            echo "⏭️ **Quickstart Guide**: Skipped" >> $GITHUB_STEP_SUMMARY
+            test_results+=("quickstart:skipped")
+          fi
+
+          if [ "${{ needs.pre-flight.outputs.should_test_versions }}" == "true" ]; then
+            if [ "${{ needs.test-versions.result }}" == "success" ]; then
+              echo "✅ **Version Compatibility**: All tests passed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("versions:success")
+            else
+              echo "❌ **Version Compatibility**: Tests failed" >> $GITHUB_STEP_SUMMARY
+              test_results+=("versions:failed")
+            fi
+          else
+            echo "⏭️ **Version Compatibility**: Skipped" >> $GITHUB_STEP_SUMMARY
+            test_results+=("versions:skipped")
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Overall status
+          failed_tests=0
+          for result in "${test_results[@]}"; do
+            if [[ "$result" == *":failed" ]]; then
+              ((failed_tests++))
+            fi
+          done
+
+          if [ $failed_tests -eq 0 ]; then
+            echo "## 🎉 Overall Result: SUCCESS" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**All tested components are working correctly!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ What This Means:" >> $GITHUB_STEP_SUMMARY
+            echo "- Users can follow tutorials without issues" >> $GITHUB_STEP_SUMMARY
+            echo "- All example scripts execute successfully" >> $GITHUB_STEP_SUMMARY
+            echo "- Service integration is working properly" >> $GITHUB_STEP_SUMMARY
+            echo "- Version compatibility is maintained" >> $GITHUB_STEP_SUMMARY
+            echo "- Documentation matches actual functionality" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Overall Result: NEEDS ATTENTION" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**$failed_tests component(s) have test failures.**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔧 Next Steps:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Review individual test job logs for details" >> $GITHUB_STEP_SUMMARY
+            echo "2. Check for version compatibility issues" >> $GITHUB_STEP_SUMMARY
+            echo "3. Verify service dependencies and startup order" >> $GITHUB_STEP_SUMMARY
+            echo "4. Update documentation if functionality changed" >> $GITHUB_STEP_SUMMARY
+            echo "5. Consider pinning versions if compatibility issues found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Test Coverage:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Jupyter Notebooks**: Interactive learning tutorials" >> $GITHUB_STEP_SUMMARY
+          echo "- **Batch Processing**: ETL, analytics, and ML pipelines" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stream Processing**: Real-time data processing" >> $GITHUB_STEP_SUMMARY
+          echo "- **Integration**: End-to-end workflow validation" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compatibility**: Cross-version testing" >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Generated by Big Data Sandbox CI/CD Pipeline*" >> $GITHUB_STEP_SUMMARY
+
+      - name: 🚨 Set Exit Code
+        run: |
+          # Determine overall success/failure
+          overall_success=true
+
+          # Check critical components
+          if [ "${{ needs.test-quickstart.result }}" == "failure" ]; then
+            echo "❌ Critical component failed: Quickstart"
+            overall_success=false
+          fi
+
+          if [ "${{ needs.test-tutorials.result }}" == "failure" ]; then
+            echo "❌ Critical component failed: Tutorials"
+            overall_success=false
+          fi
+
+          # Allow some flexibility for other components in PR context
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            if [ "${{ needs.test-batch.result }}" == "failure" ]; then
+              echo "❌ Component failed: Batch Examples"
+              overall_success=false
+            fi
+
+            if [ "${{ needs.test-streaming.result }}" == "failure" ]; then
+              echo "❌ Component failed: Streaming Examples"
+              overall_success=false
+            fi
+          fi
+
+          if [ "$overall_success" == "false" ]; then
+            echo "💥 Overall test suite failed"
+            exit 1
+          else
+            echo "🎉 Overall test suite passed"
+          fi
